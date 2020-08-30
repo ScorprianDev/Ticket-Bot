@@ -1,6 +1,5 @@
 const Discord = require('discord.js')
 const client = new Discord.Client()
-const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0IjoxLCJpZCI6IjczODkyOTU2NTQ4NDcxMjA0OSIsImlhdCI6MTU5NjMzNDIzOH0.b7pzE1KwtPnGzZ14ijFbx3FwyRcpg4I-BdYgYNT1b1Y"
 const axios = require('axios')
 const ms = require("ms");
 client.on('ready', () => {
@@ -428,4 +427,4 @@ const timerstart = new Discord.MessageEmbed()
 
 })
 
-client.login('NzM4OTI5NTY1NDg0NzEyMDQ5.XyTDyQ.S1EHMiBjht5CYiE49MBXt-7lHRA')
+client.login(TOKEN)
