@@ -378,4 +378,4 @@ message.channel.send(config)
 
 })
 
-client.login('NzQ2OTY3NDgwNzM1NjI5Mzk0.X0IBrQ.crFAYT0ArIC4af8ZP_nal5cjwCQ')
+client.login(TOKEN)
