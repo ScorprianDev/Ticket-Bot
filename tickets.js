@@ -2,28 +2,24 @@ const Discord = require('discord.js')
 const client = new Discord.Client()
 const axios = require('axios')
 const ms = require("ms");
+const JSONdb = require('simple-json-db')
+const { TOKEN } = require('./config.json')
+
 client.on('ready', () => {
 console.log('Online')
 client.user.setActivity(`tickets in ${client.guilds.cache.size} servers | -help`, { type: 'WATCHING' });
+})
 
-axios({
-        method: 'post',
-        url: 'https://discordbotlist.com/api/v1/bots/738929565484712049/stats',
-        headers: {
-            Authorization: `Bot ${token}`,
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-        },
-        data: JSON.stringify({
-            guilds: client.guilds.cache.size,
-            users: client.users.cache.size,
-        }),
-    }).then(function(res) {
-        console.log('Statistics sent Successfully')
-    }).catch(function(err) {
-        console.log(err);
-    });
+client.on('guildCreate', guild => {
+  fs.writeFile(`./Servers/${guild.id}.sqlite`, "", (err) => {})
 
+
+  setTimeout(() => {
+    const db = new JSONdb(`./Servers/${guild.id}.sqlite`)
+    db.set('prefix', `-`)
+    db.set('dmclose', 'disabled')
+    
+  })
 })
 
 
@@ -31,19 +27,8 @@ axios({
 client.on('message', async message => {
 	if(message.author.bot) return;
 	if(message.author.webhook) return;
-  const JSONdb = require('simple-json-db')
-  const push = new JSONdb(`./prefixes.sqlite`)
-
-  const prefix = push.get(`${message.guild.id}`)
-
-  if(prefix === undefined || prefix === null) {
-    const serverprefix = '-'
-
-push.set(`${message.guild.id}`, `-`)
-const prefix = push.get(`${message.guild.id}`)
-
-
-  }
+  const db = new JSONdb(`./Servers/${message.guild.id}.sqlite`)
+const prefix = db.get('prefix')
 
   if (message.channel.type === 'dm') {
     message.author.send('Please use -ticket create in your bot commands channel, I cannot offer you support from here')
@@ -55,9 +40,9 @@ const prefix = push.get(`${message.guild.id}`)
 	message.channel.send(creditembed)
 }
 if(message.content.toLowerCase().startsWith(`${prefix}prefix`)){
-	 const push = new JSONdb(`./prefixes.sqlite`)
+	const db = new JSONdb(`./Servers/${guild.id}.sqlite`)
 
-	  const prefix = push.get(`${message.guild.id}`)
+	  const prefix = push.get(`prefix`)
 	 const currentprefix = new Discord.MessageEmbed()
   .setTitle('Ticket Bot')
   .setDescription(`This servers prefix is **${prefix}**`)
@@ -66,7 +51,7 @@ if(message.content.toLowerCase().startsWith(`${prefix}prefix`)){
 if(!args[0]) return message.channel.send(currentprefix);
 if(args[0]) {
 	if(!message.member.hasPermission('ADMINISTRATOR')) return message.channel.send('You cannot set the server prefix')
-	push.set(`${message.guild.id}`, args[0])
+	db.set(`prefix`, args[0])
 
  const newprefix = new Discord.MessageEmbed()
  .setDescription('✅|This servers prefix has been changed to ' + args[0])
@@ -96,21 +81,58 @@ else if (message.content.toLowerCase() === prefix + "ticket new" || message.cont
 .setTitle('New Ticket')
 .setDescription('Please explain your issue while you wait for support')
 .setFooter('Use -ticket close to close this ticket')
-const ticketopen = new Discord.MessageEmbed()
-.setDescription(`Ticket has been opened in ${message.author.id}`)
+
+if(client.channels.cache.find(c => c.topic === message.author.id)){
+ return message.channel.send('You already have a ticket open')
+}
+
 const ticketcreate = new Discord.MessageEmbed()
 .setDescription('Ticket has been opened by ' + message.author.tag)
-const JSONdb = require('simple-json-db')
-const logsdatabase = new JSONdb('/root/Tickets/Database/logschannel.sqlite')
-	const logschannel = logsdatabase.get(message.guild.id)
-  const roledatabase = new JSONdb('/root/Tickets/Database/role.sqlite')
-  const supportrole = roledatabase.get(message.guild.id)
-  const nosupportrole = new Discord.MessageEmbed()
-  .setAuthor('Please set your support role before continuing | -setsupportrole')
-  .setFooter('Whether this be Support Team or admin')
-  if(!supportrole) return message.channel.send(nosupportrole)
+const db = new JSONdb(`./Servers/${message.guild.id}.sqlite`)
+	const logschannel = db.get('logchannel')
+  const supportrole = db.get('supportrole')
+  if(supportrole === undefined) {
+    const failed = false
+message.guild.channels.create(message.author.tag, {
+	type: 'text',
+	permissionOverwrites: [
+		{
+			id: message.guild.id,
+			deny: ['VIEW_CHANNEL'],
+		},
+		{
+			id: message.author.id,
+			allow: ['VIEW_CHANNEL'],
+		},
+		{
+			id: client.user.id,
+			allow: ['VIEW_CHANNEL', 'EMBED_LINKS'],
+
+		}
+
+
+
+	]
+})
+.then(channel => {
+  channel.setTopic(message.author.id)
+channel.send(ticketmessage)
+  message.channel.send(new Discord.MessageEmbed()
+.setDescription(`Ticket has been opened in <#${channel.id}>`))
+}).catch(err => {
+	message.channel.send('Please make sure I have the \`\`MANAGE_CHANNELS\`\` permission otherwise I cannot create a ticket')
+	const failed = true
+})
+
+
+if(failed === true) return;
+if(logschannel !== undefined) {
+client.guilds.cache.get(message.guild.id).channels.cache.get(logschannel).send(ticketcreate)
+}
+return;
+} else {
 	  const failed = false
-message.guild.channels.create(message.author.id, {
+message.guild.channels.create(message.author.tag, {
 	type: 'text',
 	permissionOverwrites: [
 		{
@@ -127,7 +149,7 @@ message.guild.channels.create(message.author.id, {
 
 		},
     {
-			id: supportrole.id,
+			id: supportrole,
 			allow: ['VIEW_CHANNEL', 'SEND_MESSAGES'],
 
 		}
@@ -136,9 +158,13 @@ message.guild.channels.create(message.author.id, {
 
 	]
 })
-.then(channel => channel.setTopic(message.author.id)
-.then(channel => channel.send(ticketmessage)
-.then(channel => message.channel.send(ticketopen)))).catch(err => {
+.then(channel => {
+  channel.setTopic(message.author.id)
+channel.send(ticketmessage)
+message.channel.send(ticketopen)
+  message.channel.send(new Discord.MessageEmbed()
+.setDescription(`Ticket has been opened in <#${channel.id}>`))
+}).catch(err => {
 	message.channel.send('Please make sure I have the \`\`MANAGE_CHANNELS\`\` permission otherwise I cannot create a ticket')
 	const failed = true
 })
@@ -148,66 +174,58 @@ if(logschannel !== undefined) {
 client.guilds.cache.get(message.guild.id).channels.cache.get(logschannel).send(ticketcreate)
 
 }
-
-} else if(message.content.toLowerCase() === prefix + "ticket close" || message.content.toLowerCase() === prefix + "t close"){
-
-  const JSONdb = require('simple-json-db')
-  const roledatabase = new JSONdb('/root/Tickets/Database/role.sqlite')
-  const supportrole = roledatabase.get(message.guild.id)
-  const dmdatabase = new JSONdb('/root/Tickets/Database/dmclose.sqlite')
-  const dmclose = dmdatabase.get(message.guild.id)
-  const logdatabase = new JSONdb('/root/Tickets/Database/logschannel.sqlite')
-  const logchannel = logdatabase.get(message.guild.id)
-if(message.channel.name === message.channel.topic) {
-
-  message.react('✅').then(() => message.react('❎'));
-
-const filter = (reaction, user) => {
-	return ['✅', '❎'].includes(reaction.emoji.name) && user.id === message.author.id;
-};
-
-message.awaitReactions(filter, { max: 1, time: 60000, errors: ['time'] })
-	.then(collected => {
-		const reaction = collected.first();
-
-		if (reaction.emoji.name === '✅') {
-      reaction.users.remove(message.author.id)
-      message.channel.send('Closing in 5 seconds')
-      setTimeout(function () {
-        message.channel.send('Closing...')
-      }, 4000)
-    setTimeout(function () {
-    const ticketchannel = client.channels.cache.get(message.channel.id)
-    ticketchannel.delete()
-    if(dmclose === "enabled") {
-      const dmoncloseembed = new Discord.MessageEmbed()
-      .setDescription(`Your ticket in ${message.guild.name} has been closed`)
-      client.users.cache.get(message.channel.name).send(dmoncloseembed)
-    }
-    if(logchannel === undefined || logchannel === null){
-
-    } else {
-      const ticketclose = new Discord.MessageEmbed()
-      .setDescription(`Ticket created by <@${message.channel.name}> has been closed by ${message.author.tag}`)
-      const ticketchannel = client.channels.cache.get(logchannel).send(ticketclose)
 }
-}, 5000)
+return;
+
+} else if(message.content.toLowerCase().startsWith(prefix + "ticket close") || message.content.toLowerCase().startsWith(prefix + "t close")){
+
+  const db = new JSONdb(`./Servers/${message.guild.id}.sqlite`)
+  const supportrole = db.get(message.guild.id)
+  const dmclose = db.get(message.guild.id)
+  const logchannel = db.get(message.guild.id)
+if(/([0-9])/g.test(message.channel.topic)) {
+  if(!args[1]){
+    message.channel.send('Closing...')
+    setTimeout(() => {
+    return message.channel.delete().catch(err => {
+      return message.channel.send('Cannot close ticket; Missing \`\`\`MANAGE_CHANNELS\`\`\` permission')
+    }, 2000)
+
+  })
+  }else if(args[1].endsWith('s') || args[1].endsWith('m') || args[1].endsWith('h')){
+    message.channel.send(`Closing in ${args[1]}`)
+    setTimeout(() => {
+      message.channel.send('Closing...')
+    }, ms(args[1]) - 1000)
+
+    setTimeout(() => {
+      message.channel.delete()
+    }, ms(args[1]))
+  }
+
+  if(logchannel !== undefined){
+    const ticketcreate = new Discord.MessageEmbed()
+.setDescription(`Ticket for ${message.channel.name} has been closed by ${message.author.tag}`)
+    client.guilds.cache.get(message.guild.id).channels.cache.get(logschannel).send(ticketcreate)
+
+  }
+
+
+if(dmclose === enabled){
+  message.guild.members.cache.get(message.channel.topic).send(`Your ticket in ${message.guild.name} was just closed`).catch(err => {
+    return;
+  })
 }
 
 
 
 
 
-    if(reaction.emoji.name === '❎'){
-      reaction.users.remove(message.author.id)
-const ticketnotclose = new Discord.MessageEmbed()
-.setDescription('Ticket will not close')
-message.channel.send(ticketnotclose)
-}}).catch(collected => {
-    const ticketnotclose = new Discord.MessageEmbed()
-    .setDescription('Ticket will not close')
-    message.channel.send(ticketnotclose)
-	});
+
+
+
+
+  
 
 
 } else {
@@ -223,15 +241,13 @@ message.channel.send(ticketnotclose)
 	const channel = message.mentions.channels.first();
 	if(!channel) return message.channel.send(supportformat)
 	const JSONdb = require('simple-json-db')
-	const logsdatabase = new JSONdb('/root/Tickets/Database/logschannel.sqlite')
-	logsdatabase.set(message.guild.id, channel.id)
+	const logsdatabase = new JSONdb(`./Servers/${message.guild.id}.sqlite`)
+	logsdatabase.set('logchannel', channel.id)
 	message.channel.send(`Logs will now be sent to ${channel}`)
-}else if(message.content.toLowerCase() === "mc?updatecountchannels"){
-	client.guilds.cache.get('708474977342718005').channels.cache.get('739286198060712058').setName(`TicketBot: ${client.guilds.cache.size}`)
 }else if(message.content.toLowerCase().startsWith(prefix + "dmonclose")){
   if(!message.member.hasPermission('ADMINISTRATOR')) return message.channel.send('You cannot toggle DMonClose')
   const JSONdb = require('simple-json-db')
-	const dmdatabase = new JSONdb('/root/Tickets/Database/dmclose.sqlite')
+	const dmdatabase = new JSONdb(`./Servers/${message.guild.id}.sqlite`)
   const currentdmclose = dmdatabase.get(message.guild.id)
   const dmoncloseformat = new Discord.MessageEmbed()
   .setAuthor('Usage: -dmonclose <disable(d)|enable(e)>\n----------\nDMonClose is currently ' + currentdmclose)
@@ -252,8 +268,8 @@ if(args[0] === "enable" | args[0] === "e"){
   const supportrole = message.mentions.roles.first()
   if(!supportrole) return message.channel.send(supportformat)
   	const JSONdb = require('simple-json-db')
-    const roledatabase = new JSONdb('/root/Tickets/Database/role.sqlite')
-    roledatabase.set(message.guild.id, supportrole)
+    const roledatabase = new JSONdb(`./Servers/${message.guild.id}.sqlite`)
+    roledatabase.set('supportrole', supportrole)
     message.channel.send(`${supportrole} has been set as the support role`)
 }else if(message.content.toLowerCase() === '-info'){
   const infoembed = new Discord.MessageEmbed()
@@ -266,35 +282,24 @@ if(args[0] === "enable" | args[0] === "e"){
   .addField('Channels', client.channels.cache.size, true)
   .addField('Stats', `Tickets Created: `)
 message.channel.send(infoembed)
-}else if(message.content.toLowerCase().startsWith(prefix + 'suggest')){
-	  if(!args[0]) return message.channel.send('What do you want to suggest?');
-  const suggestion = args.join(" ");
-  const suggestionembed = new Discord.MessageEmbed()
-  .setTitle('New Suggestion')
-  .addField('Suggestion', suggestion)
-  .addField('Author | Server', `<@${message.author.id}> | ${message.guild.name}`)
-.setFooter('Ticket Bot', `https://mcfacts.xyz/Subsidiaries/TicketBot/logo.png`)
-  client.guilds.cache.get('708474977342718005').channels.cache.get('723490330422411287').send(suggestionembed)
-  message.channel.send('Suggestion has been successfully sent to the developers')
-
 }else if(message.content.toLowerCase() === prefix + 'config'){
   const JSONdb = require('simple-json-db')
-	const dmdatabase = new JSONdb('/root/Tickets/Database/dmclose.sqlite')
+	const dmdatabase = new JSONdb(`./Servers/${message.guild.id}.sqlite`)
   const currentdmclose = dmdatabase.get(message.guild.id)
 
   const config = new Discord.MessageEmbed()
   .setTitle(`${message.guild.name}'s Configuration`)
   .addField('Dm on Close', currentdmclose)
-  const roledatabase = new JSONdb('/root/Tickets/Database/role.sqlite')
+  const roledatabase = new JSONdb('./Servers/role.sqlite')
   const supportrole = roledatabase.get(message.guild.id)
   if(supportrole === undefined) {
     config.addField('Support Role', 'Not Set')
   } else {
-    const roledatabase = new JSONdb('/root/Tickets/Database/role.sqlite')
+    const roledatabase = new JSONdb('./Servers/role.sqlite')
     const supportrole = roledatabase.get(message.guild.id)
     config.addField('Support Role', supportrole.name)
   }
-  const logsdatabase = new JSONdb('/root/Tickets/Database/logschannel.sqlite')
+  const logsdatabase = new JSONdb('./Servers/logschannel.sqlite')
   const logschannel = logsdatabase.get(message.guild.id)
   if(logschannel == undefined){
   config.addField('Logs Channel', `Not Set`)
@@ -306,30 +311,30 @@ message.channel.send(config)
 }else if(message.content.toLowerCase() === prefix + "reset"){
   if(!message.member.hasPermission('ADMINISTRATOR')) return message.channel.send('You cannot use this command')
   const Resetting = new Discord.MessageEmbed()
-  .setAuthor(`Resetting your servers configuration`, `https://rendernetwork.co/vetriloxloading.gif`)
+  .setAuthor(`Resetting your servers configuration`, `https://mcfacts.xyz/Images/emojis/loading.gif`)
   const sentMessage = await message.channel.send(Resetting)
   setTimeout(function () {
     const resettinglogchannel = new Discord.MessageEmbed()
-    .setAuthor(`Resetting your Log Channel`, `https://rendernetwork.co/vetriloxloading.gif`)
+    .setAuthor(`Resetting your Log Channel`, `https://mcfacts.xyz/Images/emojis/loading.gif`)
     sentMessage.edit(resettinglogchannel)
     const JSONdb = require('simple-json-db')
-    const logsdatabase = new JSONdb('/root/Tickets/Database/logschannel.sqlite')
+    const logsdatabase = new JSONdb('./Servers/logschannel.sqlite')
     logsdatabase.delete(message.guild.id)
   }, 4000)
   setTimeout(function () {
     const resettingdmonclose = new Discord.MessageEmbed()
-    .setAuthor(`Resetting your DmonClose`, `https://rendernetwork.co/vetriloxloading.gif`)
+    .setAuthor(`Resetting your DmonClose`, `https://mcfacts.xyz/Images/emojis/loading.gif`)
     sentMessage.edit(resettingdmonclose)
     const JSONdb = require('simple-json-db')
-    const dmdatabase = new JSONdb('/root/Tickets/Database/dmclose.sqlite')
+    const dmdatabase = new JSONdb(`./Servers/${message.guild.id}.sqlite`)
     dmdatabase.set(message.guild.id, 'disabled')
   }, 8000)
   setTimeout(function () {
     const JSONdb = require('simple-json-db')
-    const roledatabase = new JSONdb('/root/Tickets/Database/role.sqlite')
+    const roledatabase = new JSONdb('./Servers/role.sqlite')
     const supportrole = roledatabase.get(message.guild.id)
     const resettingsupportrole = new Discord.MessageEmbed()
-    .setAuthor(`Resetting your Support Role`, `https://rendernetwork.co/vetriloxloading.gif`)
+    .setAuthor(`Resetting your Support Role`, `https://mcfacts.xyz/Images/emojis/loading.gif`)
     sentMessage.edit(resettingsupportrole)
     roledatabase.delete(message.guild.id)
   }, 12000)
@@ -338,16 +343,9 @@ message.channel.send(config)
     .setAuthor('Successfully reset configuration')
     sentMessage.edit(resettingsupportrole)
   }, 16000)
-}else if(message.content.toLowerCase() === prefix + "updates"){
-  message.delete()
-  const updates = new Discord.MessageEmbed()
-  .setTitle('Ticket Bot Changelog')
-  .setDescription('**1.0.2**\n\n\`\`\`--> Updated fallbacks\n--> Changed Config | Changed Support Team from ID to Name\n--> Added Config Reset command\`\`\`')
-.setFooter('Ticket Bot', `https://mcfacts.xyz/Subsidiaries/TicketBot/logo.png`)
-message.channel.send(updates)
 }else if(message.content.toLowerCase().startsWith(prefix + "adduser")){
   const JSONdb = require('simple-json-db')
-  const roledatabase = new JSONdb('/root/Tickets/Database/role.sqlite')
+  const roledatabase = new JSONdb('./Servers/role.sqlite')
   const supportrole = roledatabase.get(message.guild.id)
   if(message.member.hasPermission('ADMINISTRATOR') || message.member.roles.cache.has(supportrole.id)){
   if(message.channel.name !== message.channel.topic) return message.channel.send('You cannot add users to this channel')
@@ -362,9 +360,9 @@ message.channel.send(updates)
 
 }else if(message.content.toLowerCase().startsWith(prefix + "removeuser")){
   const JSONdb = require('simple-json-db')
-  const roledatabase = new JSONdb('/root/Tickets/Database/role.sqlite')
+  const roledatabase = new JSONdb('./Servers/role.sqlite')
   const supportrole = roledatabase.get(message.guild.id)
-  const dmdatabase = new JSONdb('/root/Tickets/Database/dmclose.sqlite')
+  const dmdatabase = new JSONdb(`./Servers/${message.guild.id}.sqlite`)
   const dmclose = dmdatabase.get(message.guild.id)
     if(message.member.hasPermission('ADMINISTRATOR') || message.member.roles.cache.has(supportrole.id)){
   if(message.channel.name !== message.channel.topic) return message.channel.send('You cannot add users to this channel')
@@ -376,55 +374,8 @@ message.channel.send(updates)
 } else {
   message.channel.send('You cannot use this command')
 }
-}else if(message.content.toLowerCase().startsWith(prefix + "inactive") || message.content.toLowerCase().startsWith(prefix + "inactive")){
-	if(message.channel.name === message.channel.topic) {
-			let Timer = args[0];
-
-  if(!args[0]){
-    return message.channel.send("Please Enter a time period e.g \`\`5s, 10m or 20h\`\`");
-  }
-
-  if(args[0] <= 0){
-    return message.channel.send("Please Enter a time period e.g \`\`5s, 10m or 20h\`\`");
-  }
-const timerstart = new Discord.MessageEmbed()
-.setDescription(`Closing ticket in ${ms(ms(Timer), {long: true})}`)
-  message.channel.send(timerstart)
-
-  setTimeout(function () {
-        message.channel.send('Closing...')
-      }, ms(Timer) - 1000)
-
-  setTimeout(function(){
-	   const ticketchannel = client.channels.cache.get(message.channel.id)
-    ticketchannel.delete()
-    const JSONdb = require('simple-json-db')
-  const dmdatabase = new JSONdb('./Database/dmclose.sqlite')
-  const dmclose = dmdatabase.get(message.guild.id)
-    if(dmclose === "enabled") {
-
-      const dmoncloseembed = new Discord.MessageEmbed()
-      .setDescription(`Your ticket in ${message.guild.name} has been closed`)
-      client.users.cache.get(message.channel.name).send(dmoncloseembed)
-    }
-    const logdatabase = new JSONdb('/root/Tickets/Database/logchannel.sqlite')
-    const logchannel = logdatabase.get(message.guild.id)
-    if(logchannel === undefined || logchannel === null){
-
-    } else {
-      const ticketclose = new Discord.MessageEmbed()
-      .setDescription(`Ticket created by <@${message.channel.name}> has been closed by ${message.author.tag}`)
-      const ticketchannel = client.channels.cache.get(logchannel).send(ticketclose)
-}
-
-  }, ms(Timer));
-}else {
-  const ticketnotclose = new Discord.MessageEmbed()
-  .setDescription('You cannot use this command in non-ticket channels!')
-  message.channel.send(ticketnotclose)
-}
 }
 
 })
 
-client.login(TOKEN)
+client.login('NzQ2OTY3NDgwNzM1NjI5Mzk0.X0IBrQ.crFAYT0ArIC4af8ZP_nal5cjwCQ')
